@@ -163,12 +163,12 @@ try:
         X_tensor = torch.FloatTensor(X).unsqueeze(-1)
         y_tensor = torch.FloatTensor(y).unsqueeze(-1)
         
-        model = CycleLSTM(input_size=1, hidden_size=64, num_layers=2)
+        model = CycleLSTM(input_size=1, hidden_size=32, num_layers=1)  # Simplified
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
+        optimizer = optim.Adam(model.parameters(), lr=0.01)
         
         model.train()
-        for epoch in range(100):
+        for epoch in range(50):  # Reduced epochs
             optimizer.zero_grad()
             outputs = model(X_tensor)
             loss = criterion(outputs, y_tensor)
@@ -204,16 +204,14 @@ try:
     def build_keras_model(seq_length):
         """Build Keras LSTM model."""
         model = keras.Sequential([
-            layers.LSTM(64, return_sequences=True, input_shape=(seq_length, 1)),
+            layers.LSTM(32, return_sequences=False, input_shape=(seq_length, 1)),  # Simplified
             layers.Dropout(0.2),
-            layers.LSTM(64, return_sequences=False),
-            layers.Dropout(0.2),
-            layers.Dense(32, activation='relu'),
+            layers.Dense(16, activation='relu'),
             layers.Dense(1)
         ])
         
         model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+            optimizer=keras.optimizers.Adam(learning_rate=0.01),
             loss='mse',
             metrics=['mae']
         )
@@ -225,7 +223,7 @@ try:
         y_reshaped = y.reshape((y.shape[0], 1))
         
         model = build_keras_model(X.shape[1])
-        model.fit(X_reshaped, y_reshaped, epochs=100, batch_size=4, verbose=0)
+        model.fit(X_reshaped, y_reshaped, epochs=50, batch_size=4, verbose=0)  # Reduced epochs
         
         return model
     
@@ -313,13 +311,15 @@ def make_prediction(past_cycles: List[int], last_period_date: str, framework: st
 # API ENDPOINTS
 # ============================================================================
 
-@app.get("/", response_model=HealthResponse)
+@app.get("/")
 async def root():
     """Root endpoint - API health check."""
     return {
         "status": "online",
         "message": "Menstrual Cycle Prediction API is running",
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "docs": "/docs",
+        "health": "/health"
     }
 
 @app.get("/health", response_model=HealthResponse)

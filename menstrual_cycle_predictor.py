@@ -369,6 +369,11 @@ async def list_frameworks():
         "default": "pytorch" if PYTORCH_AVAILABLE else "tensorflow"
     }
 
+@app.get("/favicon.ico")
+async def favicon():
+    """Favicon handler to prevent 404 errors."""
+    return {"message": "No favicon"}
+
 # ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================

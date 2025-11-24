@@ -18,13 +18,9 @@ AI-powered REST API for predicting next menstrual cycle start dates using LSTM/G
 
 ## 📋 Table of Contents
 
-- [Demo](#-demo)
-- [Installation](#-installation)
 - [Quick Start](#-quick-start)
 - [API Documentation](#-api-documentation)
 - [Usage Examples](#-usage-examples)
-- [Deployment](#-deployment)
-- [Configuration](#-configuration)
 - [Contributing](#-contributing)
 - [License](#-license)
 

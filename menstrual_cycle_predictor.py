@@ -461,11 +461,21 @@ def make_prediction(past_cycles: List[int], last_period_date: str, framework: st
     """
     Core prediction logic that trains model and generates predictions.
     """
-    # Validate framework availability
-    if framework == 'pytorch' and not PYTORCH_AVAILABLE:
-        raise HTTPException(status_code=500, detail="PyTorch is not installed on the server")
+    # Validate framework availability and auto-fallback
     if framework == 'tensorflow' and not TENSORFLOW_AVAILABLE:
-        raise HTTPException(status_code=500, detail="TensorFlow is not installed on the server")
+        if PYTORCH_AVAILABLE:
+            framework = 'pytorch'  # Auto-fallback to PyTorch
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail="TensorFlow is not available. PyTorch is the only supported framework on this server."
+            )
+    
+    if framework == 'pytorch' and not PYTORCH_AVAILABLE:
+        raise HTTPException(
+            status_code=500, 
+            detail="PyTorch is not installed on the server"
+        )
     
     # Preprocess data
     SEQUENCE_LENGTH = 6

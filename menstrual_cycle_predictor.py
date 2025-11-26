@@ -1,7 +1,6 @@
 """
-Menstrual Cycle Prediction REST API
-A production-ready FastAPI service for predicting next period start date using deep learning.
-Supports both PyTorch and TensorFlow/Keras implementations.
+Combined Reproductive Health API
+Combines both the Chatbot and Menstrual Cycle Predictor into a single API
 """
 
 from fastapi import FastAPI, HTTPException
@@ -10,6 +9,7 @@ from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 from datetime import datetime, timedelta
 import numpy as np
+import os
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -18,9 +18,9 @@ warnings.filterwarnings('ignore')
 # ============================================================================
 
 app = FastAPI(
-    title="Menstrual Cycle Prediction API",
-    description="AI-powered menstrual cycle prediction using LSTM/GRU models",
-    version="1.0.0"
+    title="Reproductive Health Combined API",
+    description="AI-powered chatbot and menstrual cycle prediction in one API",
+    version="2.0.0"
 )
 
 # Enable CORS for web applications
@@ -33,7 +33,135 @@ app.add_middleware(
 )
 
 # ============================================================================
-# REQUEST/RESPONSE MODELS
+# CHATBOT SECTION - GROQ INTEGRATION
+# ============================================================================
+
+from groq import Groq
+
+# Initialize Groq client
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# UPDATED MODEL - Current as of November 2024
+MODEL_NAME = "llama-3.3-70b-versatile"  # ⭐ RECOMMENDED - Best performance
+
+class ChatRequest(BaseModel):
+    message: str
+
+class ChatResponse(BaseModel):
+    response: str
+    safety_triggered: Optional[bool] = False
+
+# Safety Keywords
+EMERGENCY_KEYWORDS = [
+    "severe pain", "heavy bleeding", "can't breathe", "chest pain",
+    "unconscious", "seizure", "extremely dizzy", "fainted",
+    "severe headache", "vision loss", "severe abdominal pain",
+    "hemorrhaging", "extreme bleeding", "can't stop bleeding",
+    "pregnancy complication", "severe cramping pregnancy"
+]
+
+UNSAFE_KEYWORDS = [
+    "self-harm", "suicide", "kill myself", "end my life",
+    "perform surgery", "diy surgery", "home surgery",
+    "abortion at home", "self-induce", "coat hanger",
+    "terminate pregnancy myself", "dangerous pills"
+]
+
+SYSTEM_PROMPT = """You are a supportive, knowledgeable reproductive health education assistant for girls and women. Your role is to provide accurate, general educational information only.
+
+CRITICAL SAFETY RULES YOU MUST FOLLOW:
+1. NEVER provide medical diagnosis or diagnostic conclusions
+2. NEVER prescribe treatments, medications, or dosages
+3. NEVER provide abortion methods or procedures
+4. NEVER provide instructions for self-surgery or dangerous home remedies
+5. ALWAYS encourage professional medical consultation for specific health concerns
+6. Provide only general educational information about reproductive health
+
+TOPICS YOU CAN DISCUSS:
+- Menstrual cycle education (phases, normal variations)
+- Period pain management basics (heat, rest, OTC options to discuss with doctor)
+- Reproductive anatomy education
+- Hormones and their general functions
+- Pregnancy basics and what to expect
+- Fertility basics and ovulation
+- Hygiene and general self-care
+- When to see a doctor
+
+YOUR COMMUNICATION STYLE:
+- Polite, supportive, and non-judgmental
+- Use clear, easy-to-understand language
+- Normalize reproductive health discussions
+- Validate feelings and concerns
+- Keep responses concise (2-3 paragraphs)
+- Always end with encouragement to consult healthcare providers
+
+RESPONSE FORMAT:
+- Provide educational information
+- Include relevant general facts
+- Always include a disclaimer: "This is general educational information. For personalized medical advice, please consult a qualified healthcare provider."
+
+Remember: You are an educational resource, not a replacement for medical professionals."""
+
+def check_emergency(message: str) -> bool:
+    message_lower = message.lower()
+    return any(keyword in message_lower for keyword in EMERGENCY_KEYWORDS)
+
+def check_unsafe(message: str) -> bool:
+    message_lower = message.lower()
+    return any(keyword in message_lower for keyword in UNSAFE_KEYWORDS)
+
+def get_safety_response(message: str) -> Optional[str]:
+    if check_emergency(message):
+        return """🚨 **URGENT: Your message indicates a potentially serious medical situation.**
+
+Please seek immediate medical attention:
+- Call emergency services (911 in US, 112 in EU, or your local emergency number)
+- Go to the nearest emergency room
+- Contact your doctor immediately
+
+Your health and safety are the top priority. Medical professionals can provide the urgent care you need."""
+
+    if check_unsafe(message):
+        return """I cannot provide information on this topic as it could be harmful to your health and safety.
+
+If you're experiencing a crisis or having thoughts of self-harm:
+- **Crisis Hotline:** 988 (Suicide & Crisis Lifeline - US)
+- **International:** https://findahelpline.com
+
+For reproductive health concerns, please speak with:
+- A licensed healthcare provider
+- Planned Parenthood or similar clinics
+- A trusted counselor or therapist
+
+Your wellbeing matters, and there are professionals ready to help you safely."""
+
+    return None
+
+def get_ai_response(message: str) -> str:
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": message}
+            ],
+            model=MODEL_NAME,
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        ai_response = chat_completion.choices[0].message.content
+        
+        # Additional safety check
+        if any(word in ai_response.lower() for word in ["i diagnose", "you have", "you need to take"]):
+            ai_response += "\n\n⚠️ Remember: This is educational information only, not a diagnosis or prescription. Always consult a healthcare provider for personalized medical advice."
+        
+        return ai_response
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
+
+# ============================================================================
+# MENSTRUAL CYCLE PREDICTION SECTION
 # ============================================================================
 
 class PredictionRequest(BaseModel):
@@ -86,16 +214,7 @@ class PredictionResponse(BaseModel):
     uncertainty_days: float = Field(..., description="Prediction uncertainty in days")
     framework_used: str = Field(..., description="ML framework used for prediction")
 
-class HealthResponse(BaseModel):
-    """Health check response."""
-    status: str
-    message: str
-    timestamp: str
-
-# ============================================================================
-# DATA PREPROCESSING
-# ============================================================================
-
+# Data preprocessing functions
 def preprocess_data(cycles, seq_length):
     """
     Prepare time-series data for LSTM/GRU training.
@@ -316,13 +435,18 @@ async def root():
     """Root endpoint - API health check."""
     return {
         "status": "online",
-        "message": "Menstrual Cycle Prediction API is running",
+        "service": "Combined Reproductive Health API",
+        "version": "2.0.0",
         "timestamp": datetime.now().isoformat(),
+        "features": {
+            "chatbot": "Available at /chat",
+            "cycle_prediction": "Available at /predict"
+        },
         "docs": "/docs",
         "health": "/health"
     }
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health")
 async def health_check():
     """Health check endpoint."""
     frameworks = []
@@ -331,11 +455,61 @@ async def health_check():
     if TENSORFLOW_AVAILABLE:
         frameworks.append("tensorflow")
     
+    groq_configured = bool(os.getenv("GROQ_API_KEY"))
+    
     return {
         "status": "healthy",
-        "message": f"API is operational. Available frameworks: {', '.join(frameworks)}",
+        "chatbot": {
+            "status": "operational" if groq_configured else "not configured",
+            "groq_configured": groq_configured,
+            "model": MODEL_NAME
+        },
+        "cycle_predictor": {
+            "status": "operational" if frameworks else "no ML frameworks available",
+            "available_frameworks": frameworks
+        },
         "timestamp": datetime.now().isoformat()
     }
+
+# ============================================================================
+# CHATBOT ENDPOINTS
+# ============================================================================
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """
+    Chat with the reproductive health education assistant.
+    
+    - **message**: Your question or message to the chatbot
+    
+    Returns educational information about reproductive health topics.
+    """
+    if not request.message or len(request.message.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    
+    if len(request.message) > 1000:
+        raise HTTPException(status_code=400, detail="Message too long (max 1000 characters)")
+    
+    # Check for safety triggers
+    safety_response = get_safety_response(request.message)
+    
+    if safety_response:
+        return ChatResponse(
+            response=safety_response,
+            safety_triggered=True
+        )
+    
+    # Get AI response
+    ai_response = get_ai_response(request.message)
+    
+    return ChatResponse(
+        response=ai_response,
+        safety_triggered=False
+    )
+
+# ============================================================================
+# CYCLE PREDICTION ENDPOINTS
+# ============================================================================
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_cycle(request: PredictionRequest):
@@ -360,7 +534,7 @@ async def predict_cycle(request: PredictionRequest):
 
 @app.get("/frameworks")
 async def list_frameworks():
-    """List available ML frameworks."""
+    """List available ML frameworks for cycle prediction."""
     return {
         "available_frameworks": {
             "pytorch": PYTORCH_AVAILABLE,
@@ -380,19 +554,28 @@ async def favicon():
 
 if __name__ == "__main__":
     import uvicorn
-    import os
     
-    # Get port from environment variable (Railway, Render, etc.) or default to 8000
+    # Get port from environment variable or default to 8000
     port = int(os.environ.get("PORT", 8000))
     
     print("=" * 70)
-    print("MENSTRUAL CYCLE PREDICTION API")
+    print("🚀 COMBINED REPRODUCTIVE HEALTH API")
     print("=" * 70)
-    print(f"PyTorch Available: {PYTORCH_AVAILABLE}")
-    print(f"TensorFlow Available: {TENSORFLOW_AVAILABLE}")
+    print(f"📍 Server: http://localhost:{port}")
+    print(f"📚 API Documentation: http://localhost:{port}/docs")
     print("=" * 70)
-    print(f"Starting server on port {port}")
-    print(f"API Documentation: http://localhost:{port}/docs")
+    print("CHATBOT STATUS:")
+    print(f"  🤖 Model: {MODEL_NAME}")
+    print(f"  🔑 Groq API Key: {'✅ Set' if os.getenv('GROQ_API_KEY') else '❌ Missing'}")
+    print("=" * 70)
+    print("CYCLE PREDICTOR STATUS:")
+    print(f"  🔬 PyTorch: {'✅ Available' if PYTORCH_AVAILABLE else '❌ Not installed'}")
+    print(f"  🔬 TensorFlow: {'✅ Available' if TENSORFLOW_AVAILABLE else '❌ Not installed'}")
+    print("=" * 70)
+    print("ENDPOINTS:")
+    print("  💬 Chatbot: POST /chat")
+    print("  📊 Cycle Prediction: POST /predict")
+    print("  ❤️  Health Check: GET /health")
     print("=" * 70)
     
     uvicorn.run(app, host="0.0.0.0", port=port)
